@@ -1,23 +1,14 @@
 import torch
 import torch.nn as nn
-from model_EEG import ResDepSepBlock
+from .TCN import TemporalConvNet
+from .blocks import ReLUConvBn, ResDepSepBlock
 
 
-class ReLUConvBn(nn.Module):
-    def __init__(self, C_in, C_out, kernel_size, stride, padding):
-        super(ReLUConvBn, self).__init__()
-        self.op = nn.Sequential(
-            nn.Conv1d(C_in, C_out, kernel_size, stride=stride, padding=padding, bias=False),
-            nn.BatchNorm1d(C_out),
-            nn.ReLU(inplace=False))
-
-    def forward(self, x):
-        return self.op(x)
 
 
-class OneD_CNN(nn.Module):
-    def __init__(self, input_size, channel):
-        super(OneD_CNN, self).__init__()
+class NIRS_CNN(nn.Module):
+    def __init__(self, channel):
+        super(NIRS_CNN, self).__init__()
 
         self.net = nn.Sequential(
             ReLUConvBn(channel, channel * 2, kernel_size=5, stride=2, padding=0),
@@ -44,9 +35,9 @@ class OneD_CNN(nn.Module):
         return self.out(x), x
 
 
-class OneD_ResCNN(nn.Module):
-    def __init__(self, input_size, channel):
-        super(OneD_ResCNN, self).__init__()
+class NIRS_ResCNN(nn.Module):
+    def __init__(self, channel):
+        super(NIRS_ResCNN, self).__init__()
 
         self.net = nn.Sequential(
             ResDepSepBlock(channel * 1, channel * 2, kernel_size=9, stride=4),
@@ -70,13 +61,29 @@ class OneD_ResCNN(nn.Module):
         x = torch.squeeze(x)
         return self.out(x), x
 
+class NIRS_TCN(nn.Module):
+    def __init__(self, channel):
+        super(NIRS_TCN, self).__init__()
+
+        self.net = TemporalConvNet(num_inputs=channel, num_channels=[18, 9, 5, 1])
+
+        self.out = nn.Sequential(
+            nn.Linear(50, 20),
+            nn.ReLU6(inplace=False),
+            nn.Linear(20, 2),
+            nn.Softmax(dim=-1)
+        )
+
+    def forward(self, x):
+        x = self.net(x)
+        x = torch.squeeze(x)
+        return self.out(x)
 
 if __name__ == '__main__':
     from thop import profile
 
-    model = OneD_CNN(600, 36)
-    x1 = torch.randn(1, 1, 30, 600)
-    x2 = torch.randn(1, 1, 36, 30)
-    x3 = torch.randn(2, 36, 30)
-    flops, params = profile(model, inputs=(x2))
+    model = NIRS_TCN(channel=36)
+    x = torch.randn(16, 36, 50)
+    out = model(x)
+    flops, params = profile(model, inputs=(x))
     print(flops, params)
